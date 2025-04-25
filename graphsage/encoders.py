@@ -19,7 +19,7 @@ class Encoder(nn.Module):
         self.adj_lists = adj_lists
         self.aggregator = aggregator
         self.num_sample = num_sample
-        if base_model != None:
+        if base_model is not None:
             self.base_model = base_model
 
         self.gcn = gcn
@@ -27,17 +27,19 @@ class Encoder(nn.Module):
         self.cuda = cuda
         self.aggregator.cuda = cuda
         self.weight = nn.Parameter(
-                torch.FloatTensor(embed_dim, self.feat_dim if self.gcn else 2 * self.feat_dim))
-        init.xavier_uniform(self.weight)
+            torch.FloatTensor(embed_dim, self.feat_dim if self.gcn else 2 * self.feat_dim)
+        )
+        init.xavier_uniform_(self.weight)  # <-- Fix here
 
     def forward(self, nodes):
         """
         Generates embeddings for a batch of nodes.
 
-        nodes     -- list of nodes
+        nodes -- list of nodes
         """
-        neigh_feats = self.aggregator.forward(nodes, [self.adj_lists[int(node)] for node in nodes], 
-                self.num_sample)
+        neigh_feats = self.aggregator.forward(
+            nodes, [self.adj_lists[int(node)] for node in nodes], self.num_sample
+        )
         if not self.gcn:
             if self.cuda:
                 self_feats = self.features(torch.LongTensor(nodes).cuda())
@@ -46,5 +48,6 @@ class Encoder(nn.Module):
             combined = torch.cat([self_feats, neigh_feats], dim=1)
         else:
             combined = neigh_feats
+
         combined = F.relu(self.weight.mm(combined.t()))
         return combined
