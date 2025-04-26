@@ -2,6 +2,7 @@
 import numpy as np
 from collections import defaultdict
 
+## function to load cora 
 def load_cora():
     num_nodes = 2708
     num_feats = 1433
@@ -28,7 +29,7 @@ def load_cora():
             adj_lists[paper2].add(paper1)
     return feat_data, labels, adj_lists
 
-
+## function to load pubmed
 def load_pubmed():
     num_nodes = 19717
     num_feats = 500

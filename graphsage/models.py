@@ -1,5 +1,4 @@
 
-# models.py
 import torch
 import torch.nn as nn
 from torch.nn import init
@@ -13,6 +12,7 @@ class SupervisedGraphSage(nn.Module):
         init.xavier_uniform_(self.weight)
 
     def forward(self, nodes):
+        ## calling the enc2 here!!
         embeds = self.enc(nodes)
         scores = self.weight.mm(embeds)
         return scores.t()
