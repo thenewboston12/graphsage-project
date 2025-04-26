@@ -8,8 +8,8 @@ from sklearn.metrics import f1_score
 import time
 import argparse
 
-from graphsage.aggregators import MeanAggregator
-from graphsage.encoders import Encoder
+from graphsage.aggregators import MeanAggregator, AttentionAggregator
+from graphsage.encoders import Encoder, EncoderSC
 from graphsage.models import SupervisedGraphSage
 from graphsage.datasets import load_cora, load_pubmed
 
@@ -33,28 +33,56 @@ def prepare_pubmed_data():
 # Model Building
 # -------------------
 
-def build_graphsage_model(features, adj_lists, dataset):
+def build_graphsage_model(features, adj_lists, dataset, model_type):
     if dataset == 'cora':
-        agg1 = MeanAggregator(features, cuda=False)
-        enc1 = Encoder(features, 1433, 128, adj_lists, agg1, gcn=True, cuda=False)
-        agg2 = MeanAggregator(lambda nodes: enc1(nodes).t(), cuda=False)
-        enc2 = Encoder(lambda nodes: enc1(nodes).t(), enc1.embed_dim, 128, adj_lists, agg2,
-                       base_model=enc1, gcn=True, cuda=False)
-        enc1.num_samples = 5
-        enc2.num_samples = 5
-        model = SupervisedGraphSage(7, enc2)
+        input_dim = 1433
+        num_classes = 7
+        num_samples_1 = 5
+        num_samples_2 = 5
     elif dataset == 'pubmed':
-        agg1 = MeanAggregator(features, cuda=False)
-        enc1 = Encoder(features, 500, 128, adj_lists, agg1, gcn=True, cuda=False)
-        agg2 = MeanAggregator(lambda nodes: enc1(nodes).t(), cuda=False)
-        enc2 = Encoder(lambda nodes: enc1(nodes).t(), enc1.embed_dim, 128, adj_lists, agg2,
-                       base_model=enc1, gcn=True, cuda=False)
-        enc1.num_samples = 10
-        enc2.num_samples = 25
-        model = SupervisedGraphSage(3, enc2)
+        input_dim = 500
+        num_classes = 3
+        num_samples_1 = 10
+        num_samples_2 = 25
     else:
         raise ValueError("Dataset must be 'cora' or 'pubmed'.")
+
+    # First aggregator
+    if model_type in ['baseline', 'skip']:
+        agg1 = MeanAggregator(features, cuda=False)
+    elif model_type in ['attention', 'skip_and_attention']:
+        agg1 = AttentionAggregator(features, embed_dim=input_dim, cuda=False)
+    else:
+        raise ValueError("Unknown model type")
+
+    # First encoder
+    if model_type in ['skip', 'skip_and_attention']:
+        enc1 = EncoderSC(features, input_dim, 128, adj_lists, agg1, gcn=True, cuda=False)
+    else:
+        enc1 = Encoder(features, input_dim, 128, adj_lists, agg1, gcn=True, cuda=False)
+
+    # Second aggregator
+    if model_type in ['baseline', 'skip']:
+        agg2 = MeanAggregator(lambda nodes: enc1(nodes).t(), cuda=False)
+    elif model_type in ['attention', 'skip_and_attention']:
+        agg2 = AttentionAggregator(lambda nodes: enc1(nodes).t(), embed_dim=128, cuda=False)
+
+    # Second encoder
+    if model_type in ['skip', 'skip_and_attention']:
+        enc2 = EncoderSC(lambda nodes: enc1(nodes).t(), enc1.embed_dim, 128, adj_lists, agg2,
+                         base_model=enc1, gcn=True, cuda=False)
+    else:
+        enc2 = Encoder(lambda nodes: enc1(nodes).t(), enc1.embed_dim, 128, adj_lists, agg2,
+                       base_model=enc1, gcn=True, cuda=False)
+
+    # Sampling settings
+    enc1.num_samples = num_samples_1
+    enc2.num_samples = num_samples_2
+
+    model = SupervisedGraphSage(num_classes, enc2)
+
     return model
+
 
 # -------------------
 # Training and Validation
@@ -86,7 +114,7 @@ def validate(graphsage, labels, val_nodes):
 # Runner
 # -------------------
 
-def run(dataset):
+def run(dataset, model_type):
     np.random.seed(1)
     random.seed(1)
 
@@ -103,7 +131,7 @@ def run(dataset):
     else:
         raise ValueError("Unknown dataset.")
 
-    graphsage = build_graphsage_model(features, adj_lists, dataset)
+    graphsage = build_graphsage_model(features, adj_lists, dataset, model_type)
 
     rand_indices = np.random.permutation(num_nodes)
     test = rand_indices[:1000]
@@ -123,7 +151,20 @@ def run(dataset):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train GraphSAGE on Cora or Pubmed.")
+
+    ## Choose dataset
     parser.add_argument('--dataset', type=str, choices=['cora', 'pubmed'], default='cora',
                         help="Dataset to use: 'cora' or 'pubmed'")
+    
+    ## Choose model architecture
+    parser.add_argument('--model', type=str, choices=['baseline', 'attention', 'skip', 'skip_and_attention'], default='baseline',
+                    help="Model type: 'baseline', 'attention', 'skip', or 'skip_and_attention'")
+
+    
+
+
     args = parser.parse_args()
-    run(args.dataset)
+    run(args.dataset, args.model)
+
+
+    
